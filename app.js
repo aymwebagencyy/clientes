@@ -30,42 +30,36 @@ let zona = "", sectorF = "", estF = "", buscando = false;
 // =================== ACCESO ===================
 async function arranque() {
   const { data: { session } } = await sb.auth.getSession();
-  if (!session) return mostrarLogin(1);
-  const { data: ok } = await sb.rpc("acceso_ok");
-  if (ok) return entrar(session);
-  mostrarLogin(2);
+  if (session) {
+    const { data: ok } = await sb.rpc("acceso_ok");
+    if (ok) return entrar(session);
+  }
+  mostrarLogin();
 }
-function mostrarLogin(paso) {
+function mostrarLogin() {
   $("#app").hidden = true; $("#login").hidden = false;
-  $("#paso1").hidden = paso !== 1; $("#paso2").hidden = paso !== 2;
-  (paso === 1 ? $("#lemail") : $("#lpin")).focus();
+  $("#lpin").focus();
 }
-$("#lsend").onclick = async () => {
-  const email = $("#lemail").value.trim().toLowerCase();
-  if (!/^\S+@\S+\.\S+$/.test(email)) return $("#lmsg").textContent = "Escribe un email válido.";
-  $("#lsend").disabled = true; $("#lmsg").textContent = "Enviando…";
-  const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + location.pathname } });
-  $("#lsend").disabled = false;
-  if (!error) lsSet("aym_email", email);
-  $("#lmsg").textContent = !error ? `Enviado a ${email}. Abre ese correo (mira también en Spam) y pulsa el enlace. Ábrelo en el mismo móvil u ordenador donde quieras entrar.`
-    : /rate|seconds|limit/i.test(error.message) ? "Has pedido demasiados enlaces seguidos. Espera unos minutos y vuelve a probar."
-    : "No se pudo enviar: " + error.message;
+$("#lform").onsubmit = async e => {
+  e.preventDefault();
+  const pin = $("#lpin").value.trim(), pin2 = $("#lpin2").value.trim();
+  if (!pin || !pin2) return $("#lmsg").textContent = "Escribe los dos códigos.";
+  $("#lok").disabled = true; $("#lmsg").textContent = "Comprobando…";
+  try {
+    let { data: { session } } = await sb.auth.getSession();
+    if (!session) {
+      const r = await sb.auth.signInAnonymously();
+      if (r.error) return $("#lmsg").textContent = "No se pudo conectar: " + r.error.message;
+      session = r.data.session;
+    }
+    const { data, error } = await sb.rpc("verificar_pin", { pin, pin2 });
+    if (error) return $("#lmsg").textContent = "Error: " + error.message;
+    if (data === "ok") { $("#lmsg").textContent = ""; return entrar(session); }
+    const msg = { incorrecto: "Algún código no es correcto.", bloqueado: "Demasiados intentos. Espera 15 minutos.", sin_sesion: "Vuelve a intentarlo." };
+    $("#lmsg").textContent = msg[data] || data;
+    if (data === "sin_sesion") await sb.auth.signOut();
+  } finally { $("#lok").disabled = false; $("#lpin").value = ""; $("#lpin2").value = ""; }
 };
-try { const e = localStorage.getItem("aym_email"); if (e) $("#lemail").value = e; } catch {}
-$("#lemail").onkeydown = e => { if (e.key === "Enter") $("#lsend").click(); };
-$("#lpinok").onclick = async () => {
-  const pin = $("#lpin").value.trim(); if (!pin) return;
-  $("#lpinok").disabled = true;
-  const { data, error } = await sb.rpc("verificar_pin", { pin });
-  $("#lpinok").disabled = false; $("#lpin").value = "";
-  const msg = { ok: "", incorrecto: "Código incorrecto.", bloqueado: "Demasiados intentos. Espera 15 minutos.", no_permitido: "Ese email no tiene permiso. Pide el enlace con el correo autorizado.", sin_sesion: "La sesión ha caducado: vuelve a pedir el enlace." };
-  if (error) return $("#lpinmsg").textContent = "Error: " + error.message;
-  if (data === "ok") { const { data: { session } } = await sb.auth.getSession(); return entrar(session); }
-  $("#lpinmsg").textContent = msg[data] || data;
-  if (data === "no_permitido" || data === "sin_sesion") { await sb.auth.signOut(); mostrarLogin(1); }
-};
-$("#lpin").onkeydown = e => { if (e.key === "Enter") $("#lpinok").click(); };
-$("#lsalir1").onclick = async () => { await sb.auth.signOut(); mostrarLogin(1); };
 $("#salir").onclick = async () => { await sb.auth.signOut(); location.reload(); };
 
 // =================== DATOS ===================
@@ -76,7 +70,7 @@ async function cargar(tabla, map) {
 }
 async function entrar(session) {
   $("#login").hidden = true; $("#app").hidden = false;
-  $("#quien").textContent = session?.user?.email || "";
+  $("#quien").textContent = "";
   initMapa();
   try {
     await Promise.all([cargar("negocios", S.neg), cargar("seguimiento", S.seg), cargar("zonas", S.zon), cargar("geo", S.geo)]);
