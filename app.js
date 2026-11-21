@@ -30,38 +30,31 @@ let zona = "", sectorF = "", estF = "", buscando = false;
 // =================== ACCESO ===================
 async function arranque() {
   const { data: { session } } = await sb.auth.getSession();
-  if (!session) return mostrarLogin(1);
-  const { data: ok } = await sb.rpc("acceso_ok");
-  if (ok) return entrar(session);
-  mostrarLogin(2);
+  if (session) {
+    const { data: ok } = await sb.rpc("acceso_ok");
+    if (ok) return entrar(session);
+  }
+  mostrarLogin();
 }
-function mostrarLogin(paso) {
+function mostrarLogin() {
   $("#app").hidden = true; $("#login").hidden = false;
-  $("#paso1").hidden = paso !== 1; $("#paso2").hidden = paso !== 2;
-  (paso === 1 ? $("#lemail") : $("#lpin")).focus();
+  $("#lemail").focus();
 }
-$("#lsend").onclick = async () => {
-  const email = $("#lemail").value.trim().toLowerCase();
-  if (!/^\S+@\S+\.\S+$/.test(email)) return $("#lmsg").textContent = "Escribe un email válido.";
-  $("#lsend").disabled = true; $("#lmsg").textContent = "Enviando…";
-  const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + location.pathname } });
-  $("#lsend").disabled = false;
-  $("#lmsg").textContent = error ? "No se pudo enviar: " + error.message : "Listo. Abre el email que te hemos enviado y pulsa el enlace para entrar.";
+$("#lform").onsubmit = async e => {
+  e.preventDefault();
+  const email = $("#lemail").value.trim().toLowerCase(), password = $("#lpass").value, pin = $("#lpin").value.trim();
+  if (!email || !password || !pin) return $("#lmsg").textContent = "Rellena email, contraseña y código.";
+  $("#lok").disabled = true; $("#lmsg").textContent = "Comprobando…";
+  try {
+    const r = await sb.auth.signInWithPassword({ email, password });
+    if (r.error) { $("#lmsg").textContent = "Email o contraseña incorrectos."; return; }
+    const { data, error } = await sb.rpc("verificar_pin", { pin });
+    const msg = { incorrecto: "Código incorrecto.", bloqueado: "Demasiados intentos. Espera 15 minutos.", no_permitido: "Este email no tiene acceso.", sin_sesion: "La sesión ha caducado." };
+    if (!error && data === "ok") { $("#lmsg").textContent = ""; $("#lpass").value = $("#lpin").value = ""; return entrar(r.data.session); }
+    await sb.auth.signOut();
+    $("#lmsg").textContent = error ? "Error: " + error.message : (msg[data] || data);
+  } finally { $("#lok").disabled = false; $("#lpin").value = ""; }
 };
-$("#lemail").onkeydown = e => { if (e.key === "Enter") $("#lsend").click(); };
-$("#lpinok").onclick = async () => {
-  const pin = $("#lpin").value.trim(); if (!pin) return;
-  $("#lpinok").disabled = true;
-  const { data, error } = await sb.rpc("verificar_pin", { pin });
-  $("#lpinok").disabled = false; $("#lpin").value = "";
-  const msg = { ok: "", incorrecto: "Código incorrecto.", bloqueado: "Demasiados intentos. Espera 15 minutos.", no_permitido: "Este email no tiene acceso.", sin_sesion: "La sesión ha caducado: vuelve a pedir el enlace." };
-  if (error) return $("#lpinmsg").textContent = "Error: " + error.message;
-  if (data === "ok") { const { data: { session } } = await sb.auth.getSession(); return entrar(session); }
-  $("#lpinmsg").textContent = msg[data] || data;
-  if (data === "no_permitido" || data === "sin_sesion") { await sb.auth.signOut(); mostrarLogin(1); }
-};
-$("#lpin").onkeydown = e => { if (e.key === "Enter") $("#lpinok").click(); };
-$("#lsalir1").onclick = async () => { await sb.auth.signOut(); mostrarLogin(1); };
 $("#salir").onclick = async () => { await sb.auth.signOut(); location.reload(); };
 
 // =================== DATOS ===================
