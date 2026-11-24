@@ -3,9 +3,9 @@
 const Busqueda = (() => {
   const OVERPASS = [
     "https://overpass-api.de/api/interpreter",
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
     "https://overpass.private.coffee/api/interpreter",
-    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
   ];
   const COCINAS = {kebab:"Kebab",pizza:"Pizzería",burger:"Hamburguesería",chicken:"Pollería / asador",chinese:"Restaurante chino",
     spanish:"Restaurante español",regional:"Restaurante español",tapas:"Bar de tapas",italian:"Restaurante italiano",mexican:"Restaurante mexicano",
