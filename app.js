@@ -99,6 +99,7 @@ function renderTodo() { renderStats(); renderHoy(); renderEscritos(); renderZona
 // =================== YA ESCRITOS ===================
 const ESCRITOS = ["whatsapp_enviado", "ig_enviado", "tk_enviado"];
 let verTodosEsc = false;
+const usado = (id, canal) => ((S.seg.get(id) || {}).historial || []).some(h => (h.nota || "").includes(`Mensaje de ${canal} enviado`));
 function ultimoEnvio(id) { return ((S.seg.get(id) || {}).historial || []).filter(h => /enviado/i.test(h.nota || "")).pop(); }
 function renderEscritos() {
   const box = $("#escList"); if (!box) return;
@@ -108,13 +109,15 @@ function renderEscritos() {
   $("#escInfo").innerHTML = `<b>${lista.length}</b> esperando respuesta`;
   const vis = verTodosEsc ? lista : lista.slice(0, 15);
   box.innerHTML = lista.length ? vis.map(({ n, h }) => {
-    const canal = (ESTADOS[est(n.id)] || [""])[0].replace(" enviado", "");
+    const canal = ["WhatsApp", "Instagram", "TikTok"].filter(c => usado(n.id, c)).join(" + ");
     const viejo = h.fecha && (Date.now() - new Date(h.fecha.replace(" ", "T"))) > 3 * 864e5;
     return `<div class="hoyrow" data-id="${esc(n.id)}"><div class="hn"><b>${esc(n.nombre)}</b>
       <span class="meta">${esc(n.categoria)} · ${esc(n.zona)} · ${esc(canal)} ${esc(dias(h.fecha))}${h.por ? " por " + esc(h.por) : ""}${viejo ? ' · <span style="color:#E0A84F">sin respuesta, vuelve a escribirle</span>' : ""}</span></div>
       <div class="acts">
         <button class="btn sm solid eSi">✅ Ha contestado</button>
-        ${movil(n) ? `<button class="btn sm eWa">💬 Otra vez</button>` : n.instagram ? `<button class="btn sm eIg">📸 Otra vez</button>` : n.tiktok ? `<button class="btn sm eTk">🎵 Otra vez</button>` : ""}
+        ${movil(n) ? `<button class="btn sm ${usado(n.id, "WhatsApp") ? "" : "solid"} eWa">💬 ${usado(n.id, "WhatsApp") ? "WhatsApp ✓ otra vez" : "WhatsApp"}</button>` : ""}
+        ${n.instagram ? `<button class="btn sm ${usado(n.id, "Instagram") ? "" : "solid"} eIg">📸 ${usado(n.id, "Instagram") ? "Instagram ✓ otra vez" : "Instagram"}</button>` : ""}
+        ${n.tiktok ? `<button class="btn sm ${usado(n.id, "TikTok") ? "" : "solid"} eTk">🎵 ${usado(n.id, "TikTok") ? "TikTok ✓ otra vez" : "TikTok"}</button>` : ""}
         ${n.telefono ? `<a class="btn sm" href="tel:${esc(n.telefono)}">☎ Llamar</a>` : ""}
         <button class="btn sm eNo">No le interesa</button>
       </div></div>`; }).join("")
