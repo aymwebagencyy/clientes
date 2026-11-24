@@ -26,6 +26,7 @@ const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
 
 const S = { neg: new Map(), seg: new Map(), zon: new Map(), geo: new Map() };
 let zona = "", sectorF = "", estF = "", buscando = false;
+const POR_PAGINA = 24; let mostrar = POR_PAGINA;
 
 // =================== ACCESO ===================
 async function arranque() {
@@ -78,8 +79,8 @@ async function entrar(session) {
   renderTodo(); dibujarZonas(); encuadrar();
   // cambios en directo (tu socio y tú a la vez)
   sb.channel("cambios")
-    .on("postgres_changes", { event: "*", schema: "public", table: "seguimiento" }, p => { aplicar(S.seg, p); renderTodo(); })
-    .on("postgres_changes", { event: "*", schema: "public", table: "negocios" }, p => { aplicar(S.neg, p); renderTodo(); })
+    .on("postgres_changes", { event: "*", schema: "public", table: "seguimiento" }, p => { aplicar(S.seg, p); pintar(); })
+    .on("postgres_changes", { event: "*", schema: "public", table: "negocios" }, p => { aplicar(S.neg, p); pintar(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "zonas" }, p => { aplicar(S.zon, p); renderZonas(); dibujarZonas(); })
     .subscribe();
   setTimeout(automatico, 1500);
@@ -94,6 +95,8 @@ async function guardar(tabla, id, data) {
 const est = id => (S.seg.get(id) || {}).estado || "sin_llamar";
 const zonasLista = () => [...S.zon.entries()].filter(([id]) => !id.startsWith("_")).map(([, z]) => z).sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
 function renderTodo() { renderStats(); renderHoy(); renderZonas(); dibujarNegocios(); renderGrid(); }
+let _pend = 0;  // junta varios cambios seguidos en un solo repintado
+function pintar() { clearTimeout(_pend); _pend = setTimeout(renderTodo, 120); }
 
 // =================== BÚSQUEDA DE NEGOCIOS ===================
 async function buscarZona(nombre, cantidad = POR_SEMANA) {
@@ -112,7 +115,7 @@ async function buscarZona(nombre, cantidad = POR_SEMANA) {
     await guardar("geo", id, geo);
     const prev = S.zon.get(id) || {};
     await guardar("zonas", id, { ...prev, nombre, activa: prev.activa ?? true, pendiente: false, ultima: ahora() });
-    renderTodo(); dibujarZonas();
+    pintar(); dibujarZonas();
     toast(nuevos.length ? `${nombre}: ${nuevos.length} negocios nuevos` : `${nombre}: no hay más negocios nuevos sin web de estos tipos`, 4000);
     return nuevos.length;
   } catch (e) {
@@ -125,7 +128,12 @@ async function buscarZona(nombre, cantidad = POR_SEMANA) {
 }
 // Al abrir: zonas pendientes y la tanda semanal (15 por zona marcada, una vez por semana)
 async function automatico() {
-  for (const z of zonasLista().filter(z => z.pendiente)) await buscarZona(z.nombre);
+  const hace6h = new Date(Date.now() - 6 * 3600e3).toISOString();
+  for (const z of zonasLista().filter(z => z.pendiente && !(z.intento > hace6h))) {
+    const id = Busqueda.slug(z.nombre);
+    await guardar("zonas", id, { ...S.zon.get(id), intento: new Date().toISOString() }).catch(() => {});
+    await buscarZona(z.nombre);
+  }
   const meta = S.zon.get("_semana") || {};
   if (!meta.ultima || meta.ultima <= semana()) {
     const activas = zonasLista().filter(z => z.activa);
@@ -160,7 +168,7 @@ function renderZonas() {
     el.querySelector("input").onclick = async e => { e.stopPropagation();
       await guardar("zonas", id, { ...S.zon.get(id), activa: e.target.checked }).catch(err => toast("No se pudo guardar: " + err.message));
       toast(e.target.checked ? `${nombre}: 15 nuevos cada semana` : `${nombre}: sin negocios nuevos cada semana`); dibujarZonas(); };
-    el.onclick = () => { zona = zona === nombre ? "" : nombre; renderTodo(); dibujarZonas(); zona ? encuadrar(nombre) : encuadrar(); };
+    el.onclick = () => { zona = zona === nombre ? "" : nombre; mostrar = POR_PAGINA; renderTodo(); dibujarZonas(); zona ? encuadrar(nombre) : encuadrar(); };
   });
   const usadas = new Set(zs.map(z => z.nombre));
   $("#sugerencias").innerHTML = SUGERENCIAS.filter(s => !usadas.has(s)).map(s => `<option value="${esc(s)}">`).join("");
@@ -172,7 +180,7 @@ $("#nz").onkeydown = e => { if (e.key === "Enter") $("#bz").click(); };
 let MAP, capaZonas, capaNeg;
 function initMapa() {
   if (MAP) return;
-  MAP = L.map("map", { zoomControl: true }).setView([40.32, -3.72], 11);
+  MAP = L.map("map", { zoomControl: true, preferCanvas: true }).setView([40.32, -3.72], 11);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "&copy; OpenStreetMap" }).addTo(MAP);
   capaZonas = L.layerGroup().addTo(MAP); capaNeg = L.layerGroup().addTo(MAP);
   MAP.on("click", e => elegirPunto(e.latlng));
@@ -220,14 +228,17 @@ async function elegirPunto(ll) {
 function verFicha(id) {
   MAP.closePopup();
   let c = document.querySelector(`.card[data-id="${CSS.escape(id)}"]`);
-  if (!c) { zona = ""; sectorF = ""; estF = ""; $("#q").value = S.neg.get(id)?.nombre || ""; renderTodo(); c = document.querySelector(`.card[data-id="${CSS.escape(id)}"]`); }
+  if (!c) { zona = ""; sectorF = ""; estF = ""; $("#q").value = S.neg.get(id)?.nombre || ""; mostrar = POR_PAGINA; renderTodo(); c = document.querySelector(`.card[data-id="${CSS.escape(id)}"]`); }
   c?.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 // =================== FILTROS ===================
 $("#fEstado").innerHTML = `<option value="">Todos los estados</option>` + Object.entries(ESTADOS).map(([k, [l]]) => `<option value="${k}">${l}</option>`).join("");
-document.querySelectorAll("[data-s]").forEach(b => b.onclick = () => { sectorF = b.dataset.s; document.querySelectorAll("[data-s]").forEach(x => x.classList.toggle("on", x === b)); renderTodo(); });
-["#q", "#fEstado", "#fTel", "#fNew", "#fDesc"].forEach(s => $(s).addEventListener("input", () => { if (s === "#fEstado") estF = ""; dibujarNegocios(); renderGrid(); }));
+document.querySelectorAll("[data-s]").forEach(b => b.onclick = () => { sectorF = b.dataset.s; mostrar = POR_PAGINA; document.querySelectorAll("[data-s]").forEach(x => x.classList.toggle("on", x === b)); renderTodo(); });
+let _qT = 0;
+["#q", "#fEstado", "#fTel", "#fNew", "#fDesc"].forEach(s => $(s).addEventListener("input", () => {
+  if (s === "#fEstado") estF = "";
+  clearTimeout(_qT); _qT = setTimeout(() => { mostrar = POR_PAGINA; dibujarNegocios(); renderGrid(); }, s === "#q" ? 300 : 0); }));
 function visibles() {
   const q = $("#q").value.toLowerCase(), fe = $("#fEstado").value;
   const grupo = { interes: ["interesado", "quiere_web", "reunion", "presupuesto"], no_contesta: ["no_contesta", "llamar_luego"] };
@@ -254,7 +265,10 @@ function renderGrid() {
   if (!S.neg.size) { $("#grid").innerHTML = `<div class="empty">Todavía no hay negocios. Añade una zona a la derecha.</div>`; $("#count").textContent = ""; return; }
   const L2 = visibles().sort((a, b) => (b.anadido || "").localeCompare(a.anadido || "") || (b.prioridad || 0) - (a.prioridad || 0));
   $("#count").textContent = `${L2.length} negocios`;
-  $("#grid").innerHTML = L2.length ? L2.map(card).join("") : `<div class="empty">No hay negocios con estos filtros.</div>`;
+  const vis = L2.slice(0, mostrar);
+  $("#grid").innerHTML = L2.length ? vis.map(card).join("") + (L2.length > vis.length ? `<div class="empty"><button class="btn solid" id="verMas">Ver más (${L2.length - vis.length} restantes)</button></div>` : "")
+    : `<div class="empty">No hay negocios con estos filtros.</div>`;
+  const vm = $("#verMas"); if (vm) vm.onclick = () => { mostrar += POR_PAGINA; renderGrid(); };
   bind();
 }
 function card(n) {
@@ -327,9 +341,9 @@ function bind() {
     on(".aSave", async () => {
       if (!firma()) { pedirNombre(() => c.querySelector(".aSave").click()); return; }
       try { await guardarSeg(id, { estado: c.querySelector(".cEst").value, notas: c.querySelector(".cNotas").value, proxima: c.querySelector(".cProx").value }, c.querySelector(".cNota").value.trim());
-        toast("Guardado"); renderTodo(); } catch (e) { toast("No se pudo guardar: " + e.message); }
+        toast("Guardado"); pintar(); } catch (e) { toast("No se pudo guardar: " + e.message); }
     });
-    on(".aDesc", async () => { try { await guardar("negocios", id, { ...n, descartado: !n.descartado }); renderTodo(); } catch (e) { toast("No se pudo: " + e.message); } });
+    on(".aDesc", async () => { try { await guardar("negocios", id, { ...n, descartado: !n.descartado }); pintar(); } catch (e) { toast("No se pudo: " + e.message); } });
     c.querySelectorAll(".aUp").forEach(b => b.onclick = () => { subirA = id; $("#upl").click(); });
     on(".aEdit", () => editar(n));
     c.querySelectorAll(".gal img").forEach(img => img.onclick = () => { const m = document.createElement("div"); m.className = "modal"; m.innerHTML = `<img src="${esc(img.src)}" alt="">`; m.onclick = () => m.remove(); document.body.append(m); });
@@ -346,7 +360,7 @@ $("#upl").onchange = async e => {
       if (error) throw error;
       nuevas.push({ ruta, url: sb.storage.from("fotos").getPublicUrl(ruta).data.publicUrl });
     }
-    await guardar("negocios", subirA, { ...n, fotos: [...(n.fotos || []), ...nuevas] }); toast("Fotos subidas"); renderTodo();
+    await guardar("negocios", subirA, { ...n, fotos: [...(n.fotos || []), ...nuevas] }); toast("Fotos subidas"); pintar();
   } catch (err) { toast("No se pudieron subir: " + err.message); }
 };
 function pedirNombre(despues) {
@@ -369,7 +383,7 @@ function editar(n) {
       if (v && k === "tiktok" && !v.startsWith("http")) v = "https://www.tiktok.com/@" + v.replace(/^@/, "");
       if (v && (k === "valoracion" || k === "resenas")) v = Number(v.replace(",", "."));
       if (v || v === 0) d[k] = v; else delete d[k]; });
-    try { await guardar("negocios", n.id, d); m.remove(); toast("Datos guardados"); renderTodo(); } catch (e) { toast("No se pudo guardar: " + e.message); } };
+    try { await guardar("negocios", n.id, d); m.remove(); toast("Datos guardados"); pintar(); } catch (e) { toast("No se pudo guardar: " + e.message); } };
 }
 
 // Mensaje de WhatsApp personalizado según el tipo de negocio
@@ -457,7 +471,7 @@ function modalMsg(n, canal) {
     if (canal !== "wa") { try { await navigator.clipboard.writeText(ta.value); } catch {} }
     m.remove();
     const prev = S.seg.get(n.id) || {}; const estado = (!prev.estado || ["sin_llamar", "whatsapp_enviado", "ig_enviado", "tk_enviado"].includes(prev.estado)) ? C.estado : prev.estado;
-    try { await guardarSeg(n.id, { estado }, `Mensaje de ${C.nombre} enviado`); renderTodo(); toast(canal === "wa" ? "Marcado como WhatsApp enviado" : "Mensaje copiado: pégalo en su chat. Marcado como enviado"); }
+    try { await guardarSeg(n.id, { estado }, `Mensaje de ${C.nombre} enviado`); pintar(); toast(canal === "wa" ? "Marcado como WhatsApp enviado" : "Mensaje copiado: pégalo en su chat. Marcado como enviado"); }
     catch (e) { toast("No se pudo marcar: " + e.message); } });
 }
 
@@ -503,12 +517,12 @@ function renderHoy() {
     const n = S.neg.get(r.dataset.id), on = (s, f) => { const e = r.querySelector(s); if (e) e.onclick = f; };
     on(".hWa", () => modalMsg(n, "wa")); on(".hIg", () => modalMsg(n, "ig")); on(".hTk", () => modalMsg(n, "tk"));
     on(".hAdd", () => editar(n));
-    on(".hTel", () => setTimeout(() => guardarSeg(n.id, { estado: "llamado" }, "Llamado desde Hoy toca").then(renderTodo).catch(() => {}), 500));
+    on(".hTel", () => setTimeout(() => guardarSeg(n.id, { estado: "llamado" }, "Llamado desde Hoy toca").then(pintar).catch(() => {}), 500));
     on(".hRsave", async () => {
       const e = parseFloat(String(r.querySelector(".hEst").value).replace(",", ".")), c = parseInt(r.querySelector(".hRes").value, 10);
       if (!(e >= 0 && e <= 5) || !(c >= 0)) return toast("Pon las estrellas (0 a 5) y el número de reseñas");
       try { await guardar("negocios", n.id, { ...n, valoracion: e, resenas: c });
-        toast(e >= EST_MIN && c >= RES_MIN ? "¡Cumple! Ya puedes escribirle" : `Quitado: necesita ${num1(EST_MIN)}★ y ${RES_MIN} reseñas`); renderTodo(); }
+        toast(e >= EST_MIN && c >= RES_MIN ? "¡Cumple! Ya puedes escribirle" : `Quitado: necesita ${num1(EST_MIN)}★ y ${RES_MIN} reseñas`); pintar(); }
       catch (err) { toast("No se pudo guardar: " + err.message); } });
     on(".hSkip", () => { lsSet("aym_saltar", JSON.stringify({ dia: hoyISO(), ids: [...saltados(), n.id] })); renderHoy(); });
   });
