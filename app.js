@@ -94,7 +94,41 @@ async function guardar(tabla, id, data) {
 
 const est = id => (S.seg.get(id) || {}).estado || "sin_llamar";
 const zonasLista = () => [...S.zon.entries()].filter(([id]) => !id.startsWith("_")).map(([, z]) => z).sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
-function renderTodo() { renderStats(); renderHoy(); renderZonas(); dibujarNegocios(); renderGrid(); }
+function renderTodo() { renderStats(); renderHoy(); renderEscritos(); renderZonas(); dibujarNegocios(); renderGrid(); }
+
+// =================== YA ESCRITOS ===================
+const ESCRITOS = ["whatsapp_enviado", "ig_enviado", "tk_enviado"];
+let verTodosEsc = false;
+function ultimoEnvio(id) { return ((S.seg.get(id) || {}).historial || []).filter(h => /enviado/i.test(h.nota || "")).pop(); }
+function renderEscritos() {
+  const box = $("#escList"); if (!box) return;
+  const lista = [...S.neg.values()].filter(n => !n.descartado && ESCRITOS.includes(est(n.id)))
+    .map(n => ({ n, h: ultimoEnvio(n.id) || {} })).sort((a, b) => (b.h.fecha || "").localeCompare(a.h.fecha || ""));
+  const dias = f => { if (!f) return ""; const d = Math.floor((Date.now() - new Date(f.replace(" ", "T"))) / 864e5); return d <= 0 ? "hoy" : d === 1 ? "ayer" : `hace ${d} días`; };
+  $("#escInfo").innerHTML = `<b>${lista.length}</b> esperando respuesta`;
+  const vis = verTodosEsc ? lista : lista.slice(0, 15);
+  box.innerHTML = lista.length ? vis.map(({ n, h }) => {
+    const canal = (ESTADOS[est(n.id)] || [""])[0].replace(" enviado", "");
+    const viejo = h.fecha && (Date.now() - new Date(h.fecha.replace(" ", "T"))) > 3 * 864e5;
+    return `<div class="hoyrow" data-id="${esc(n.id)}"><div class="hn"><b>${esc(n.nombre)}</b>
+      <span class="meta">${esc(n.categoria)} · ${esc(n.zona)} · ${esc(canal)} ${esc(dias(h.fecha))}${h.por ? " por " + esc(h.por) : ""}${viejo ? ' · <span style="color:#E0A84F">sin respuesta, vuelve a escribirle</span>' : ""}</span></div>
+      <div class="acts">
+        <button class="btn sm solid eSi">✅ Ha contestado</button>
+        ${movil(n) ? `<button class="btn sm eWa">💬 Otra vez</button>` : n.instagram ? `<button class="btn sm eIg">📸 Otra vez</button>` : n.tiktok ? `<button class="btn sm eTk">🎵 Otra vez</button>` : ""}
+        ${n.telefono ? `<a class="btn sm" href="tel:${esc(n.telefono)}">☎ Llamar</a>` : ""}
+        <button class="btn sm eNo">No le interesa</button>
+      </div></div>`; }).join("")
+      + (lista.length > vis.length ? `<button class="btn sm" id="escMas">Ver los ${lista.length} escritos</button>` : "")
+    : `<div class="meta">Todavía no habéis escrito a nadie. Empieza por "Hoy toca".</div>`;
+  const mas = $("#escMas"); if (mas) mas.onclick = () => { verTodosEsc = true; renderEscritos(); };
+  box.querySelectorAll(".hoyrow").forEach(r => {
+    const n = S.neg.get(r.dataset.id), on = (s, f) => { const e = r.querySelector(s); if (e) e.onclick = f; };
+    const marcar = (estado, nota, txt) => guardarSeg(n.id, { estado }, nota).then(() => { toast(txt); pintar(); }).catch(e => toast("No se pudo: " + e.message));
+    on(".eSi", () => marcar("interesado", "Ha contestado al mensaje", "¡Bien! Movido a Interesados"));
+    on(".eNo", () => marcar("no_interesado", "No le interesa", "Marcado como no interesado"));
+    on(".eWa", () => modalMsg(n, "wa")); on(".eIg", () => modalMsg(n, "ig")); on(".eTk", () => modalMsg(n, "tk"));
+  });
+}
 let _pend = 0;  // junta varios cambios seguidos en un solo repintado
 function pintar() { clearTimeout(_pend); _pend = setTimeout(renderTodo, 120); }
 
@@ -148,7 +182,7 @@ async function automatico() {
 function renderStats() {
   const all = [...S.neg.values()].filter(n => !n.descartado);
   const cnt = (...ks) => all.filter(n => ks.includes(est(n.id))).length;
-  const items = [["", "Total", all.length], ["sin_llamar", "Sin llamar", cnt("sin_llamar")], ["no_contesta", "No contestan", cnt("no_contesta", "llamar_luego")],
+  const items = [["", "Total", all.length], ["sin_llamar", "Sin llamar", cnt("sin_llamar")], ["escritos", "Ya escritos", cnt(...ESCRITOS)], ["no_contesta", "No contestan", cnt("no_contesta", "llamar_luego")],
     ["interes", "Interesados", cnt("interesado", "quiere_web", "reunion", "presupuesto")], ["en_proceso", "Haciendo su web", cnt("en_proceso")],
     ["cliente", "Clientes", cnt("cliente")], ["nuevos", "Nuevos 7 días", all.filter(n => n.anadido >= semana()).length]];
   $("#stats").innerHTML = items.map(([k, l, v]) => `<button class="stat ${estF === k && k ? "on" : ""}" data-k="${k}"><b>${v}</b><span>${l}</span></button>`).join("");
@@ -241,7 +275,7 @@ let _qT = 0;
   clearTimeout(_qT); _qT = setTimeout(() => { mostrar = POR_PAGINA; dibujarNegocios(); renderGrid(); }, s === "#q" ? 300 : 0); }));
 function visibles() {
   const q = $("#q").value.toLowerCase(), fe = $("#fEstado").value;
-  const grupo = { interes: ["interesado", "quiere_web", "reunion", "presupuesto"], no_contesta: ["no_contesta", "llamar_luego"] };
+  const grupo = { interes: ["interesado", "quiere_web", "reunion", "presupuesto"], no_contesta: ["no_contesta", "llamar_luego"], escritos: ESCRITOS };
   return [...S.neg.values()].filter(n => ($("#fDesc").checked || !n.descartado)
     && (!zona || n.zona === zona) && (!sectorF || n.sector === sectorF)
     && (!fe || est(n.id) === fe) && (fe || !estF || (grupo[estF] || [estF]).includes(est(n.id)))
