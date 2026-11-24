@@ -118,6 +118,9 @@ function renderEscritos() {
         ${movil(n) ? `<button class="btn sm ${usado(n.id, "WhatsApp") ? "" : "solid"} eWa">💬 ${usado(n.id, "WhatsApp") ? "WhatsApp ✓ otra vez" : "WhatsApp"}</button>` : ""}
         ${n.instagram ? `<button class="btn sm ${usado(n.id, "Instagram") ? "" : "solid"} eIg">📸 ${usado(n.id, "Instagram") ? "Instagram ✓ otra vez" : "Instagram"}</button>` : ""}
         ${n.tiktok ? `<button class="btn sm ${usado(n.id, "TikTok") ? "" : "solid"} eTk">🎵 ${usado(n.id, "TikTok") ? "TikTok ✓ otra vez" : "TikTok"}</button>` : ""}
+        ${n.instagram ? `<a class="btn sm" target="_blank" rel="noopener" href="${esc(n.instagram)}">👁 Ver su Instagram</a>` : `<a class="btn sm" target="_blank" rel="noopener" href="https://www.google.com/search?q=${encodeURIComponent(n.nombre + " " + n.zona + " instagram")}">🔎 Buscar Instagram</a>`}
+        ${n.tiktok ? `<a class="btn sm" target="_blank" rel="noopener" href="${esc(n.tiktok)}">👁 Ver su TikTok</a>` : `<a class="btn sm" target="_blank" rel="noopener" href="https://www.google.com/search?q=${encodeURIComponent(n.nombre + " " + n.zona + " tiktok")}">🔎 Buscar TikTok</a>`}
+        ${!n.instagram || !n.tiktok ? `<button class="btn sm eAdd">＋ Añadir redes</button>` : ""}
         ${n.telefono ? `<a class="btn sm" href="tel:${esc(n.telefono)}">☎ Llamar</a>` : ""}
         <button class="btn sm eNo">No le interesa</button>
       </div></div>`; }).join("")
@@ -129,6 +132,7 @@ function renderEscritos() {
     const marcar = (estado, nota, txt) => guardarSeg(n.id, { estado }, nota).then(() => { toast(txt); pintar(); }).catch(e => toast("No se pudo: " + e.message));
     on(".eSi", () => marcar("interesado", "Ha contestado al mensaje", "¡Bien! Movido a Interesados"));
     on(".eNo", () => marcar("no_interesado", "No le interesa", "Marcado como no interesado"));
+    on(".eAdd", () => editar(n));
     on(".eWa", () => modalMsg(n, "wa")); on(".eIg", () => modalMsg(n, "ig")); on(".eTk", () => modalMsg(n, "tk"));
   });
 }
@@ -425,7 +429,10 @@ function editar(n) {
 
 // Mensaje de WhatsApp personalizado según el tipo de negocio
 // ----- Mensajes personalizados: cercanos, cortos, que no suenen a plantilla -----
-const RES_MIN = 20, EST_MIN = 4.0;   // minimo de reseñas y estrellas para "Hoy toca"
+// Mínimos para "Hoy toca": solo negocios con muy buenas reseñas
+function minimos(n) {
+  return (n.sector === "Peluquería" || n.sector === "Fotografía") ? { est: 4.5, res: 20 } : { est: 4.3, res: 50 };
+}
 const elige = (n, arr) => arr[[...String(n.id)].reduce((a, ch) => a + ch.charCodeAt(0), 0) % arr.length];
 const num1 = v => String(Math.round(Number(v) * 10) / 10).replace(".", ",");
 function tipoDe(n) {
@@ -444,7 +451,7 @@ function tipoDe(n) {
 }
 function piezas(n) {
   const { t, s } = tipoDe(n), z = n.zona, nom = n.nombre;
-  const buenas = Number(n.valoracion) >= EST_MIN && Number(n.resenas) >= RES_MIN;
+  const buenas = resenasOk(n) === true;
   const elogio = buenas
     ? elige(n, [`Estuve mirando ${nom} en Google: un ${num1(n.valoracion)} con ${n.resenas} reseñas, se nota que lo hacéis bien 👏`,
                 `Vi que ${nom} tiene un ${num1(n.valoracion)} en Google con ${n.resenas} opiniones. Eso no lo consigue cualquiera.`])
@@ -508,8 +515,28 @@ function modalMsg(n, canal) {
     if (canal !== "wa") { try { await navigator.clipboard.writeText(ta.value); } catch {} }
     m.remove();
     const prev = S.seg.get(n.id) || {}; const estado = (!prev.estado || ["sin_llamar", "whatsapp_enviado", "ig_enviado", "tk_enviado"].includes(prev.estado)) ? C.estado : prev.estado;
-    try { await guardarSeg(n.id, { estado }, `Mensaje de ${C.nombre} enviado`); pintar(); toast(canal === "wa" ? "Marcado como WhatsApp enviado" : "Mensaje copiado: pégalo en su chat. Marcado como enviado"); }
+    try { await guardarSeg(n.id, { estado }, `Mensaje de ${C.nombre} enviado`); pintar(); toast(canal === "wa" ? "Marcado como WhatsApp enviado" : "Mensaje copiado: pégalo en su chat. Marcado como enviado");
+      if (canal === "wa") despuesWA(n); }
     catch (e) { toast("No se pudo marcar: " + e.message); } });
+}
+
+// Después del WhatsApp: ver sus redes y escribirle también por ahí
+function despuesWA(n) {
+  const q = encodeURIComponent(`${n.nombre} ${n.zona}`);
+  const m = document.createElement("div"); m.className = "modal";
+  m.innerHTML = `<div class="box"><b style="font:400 18px Georgia;color:#E8D4A0">WhatsApp enviado a ${esc(n.nombre)} ✓</b>
+    <div class="meta">Ahora puedes ver sus redes, seguirles y escribirles también por ahí.</div>
+    <div class="acts">
+      ${n.instagram ? `<a class="btn sm" target="_blank" rel="noopener" href="${esc(n.instagram)}">👁 Ver su Instagram</a><button class="btn sm solid" id="dIg">📸 Mensaje por Instagram</button>`
+        : `<a class="btn sm" target="_blank" rel="noopener" href="https://www.google.com/search?q=${q}%20instagram">🔎 Buscar su Instagram</a>`}
+      ${n.tiktok ? `<a class="btn sm" target="_blank" rel="noopener" href="${esc(n.tiktok)}">👁 Ver su TikTok</a><button class="btn sm solid" id="dTk">🎵 Mensaje por TikTok</button>`
+        : `<a class="btn sm" target="_blank" rel="noopener" href="https://www.google.com/search?q=${q}%20tiktok">🔎 Buscar su TikTok</a>`}
+      ${!n.instagram || !n.tiktok ? `<button class="btn sm" id="dAdd">＋ Añadir sus redes</button>` : ""}
+    </div>
+    <div class="acts" style="justify-content:flex-end"><button class="btn" id="dC">Listo</button></div></div>`;
+  document.body.append(m);
+  const on = (s, f) => { const e = m.querySelector(s); if (e) e.onclick = () => { m.remove(); f(); }; };
+  on("#dIg", () => modalMsg(n, "ig")); on("#dTk", () => modalMsg(n, "tk")); on("#dAdd", () => editar(S.neg.get(n.id) || n)); on("#dC", () => {});
 }
 
 // =================== HOY TOCA ===================
@@ -520,7 +547,8 @@ function contactadoHoy(id) { return ((S.seg.get(id) || {}).historial || []).some
 // true = cumple, false = no llega al mínimo, null = aún no lo sabemos
 function resenasOk(n) {
   if (n.valoracion == null || n.resenas == null || n.valoracion === "" || n.resenas === "") return null;
-  return Number(n.valoracion) >= EST_MIN && Number(n.resenas) >= RES_MIN;
+  const m = minimos(n);
+  return Number(n.valoracion) >= m.est && Number(n.resenas) >= m.res;
 }
 function renderHoy() {
   const box = $("#hoyList"); if (!box) return;
@@ -559,7 +587,7 @@ function renderHoy() {
       const e = parseFloat(String(r.querySelector(".hEst").value).replace(",", ".")), c = parseInt(r.querySelector(".hRes").value, 10);
       if (!(e >= 0 && e <= 5) || !(c >= 0)) return toast("Pon las estrellas (0 a 5) y el número de reseñas");
       try { await guardar("negocios", n.id, { ...n, valoracion: e, resenas: c });
-        toast(e >= EST_MIN && c >= RES_MIN ? "¡Cumple! Ya puedes escribirle" : `Quitado: necesita ${num1(EST_MIN)}★ y ${RES_MIN} reseñas`); pintar(); }
+        toast(e >= minimos(n).est && c >= minimos(n).res ? "¡Cumple! Ya puedes escribirle" : `Quitado: necesita ${num1(minimos(n).est)}★ y ${minimos(n).res} reseñas`); pintar(); }
       catch (err) { toast("No se pudo guardar: " + err.message); } });
     on(".hSkip", () => { lsSet("aym_saltar", JSON.stringify({ dia: hoyISO(), ids: [...saltados(), n.id] })); renderHoy(); });
   });
