@@ -65,11 +65,13 @@ const Busqueda = (() => {
   async function overpass(q) {
     let ultimo = "";
     for (const u of OVERPASS) {
+      const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 60000);  // max 1 minuto por servidor
       try {
-        const r = await fetch(u, { method: "POST", body: new URLSearchParams({ data: q }) });
-        if (r.ok) return (await r.json()).elements;
+        const r = await fetch(u, { method: "POST", body: new URLSearchParams({ data: q }), signal: ctl.signal });
+        if (r.ok) { const j = await r.json(); clearTimeout(t); return j.elements; }
         ultimo = r.status;
-      } catch (e) { ultimo = e.message; }
+      } catch (e) { ultimo = e.name === "AbortError" ? "sin respuesta" : e.message; }
+      clearTimeout(t);
       await sleep(1500);
     }
     throw new Error("Los servidores de mapas están saturados (" + ultimo + "). Prueba en unos minutos.");
@@ -77,7 +79,7 @@ const Busqueda = (() => {
 
   function query(aid) {
     const sw = '["name"][!"website"][!"contact:website"][!"url"][!"brand"][!"brand:wikidata"]';
-    return `[out:json][timeout:90];area(${aid})->.a;(
+    return `[out:json][timeout:55];area(${aid})->.a;(
       nwr(area.a)["amenity"~"^(restaurant|fast_food)$"]${sw};
       nwr(area.a)["shop"~"^(bakery|pastry|hairdresser|barber|photo|photo_studio)$"]${sw};
       nwr(area.a)["shop"="butcher"]["butcher"="poultry"]${sw};

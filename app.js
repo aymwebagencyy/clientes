@@ -453,12 +453,12 @@ function piezas(n) {
   const { t, s } = tipoDe(n), z = n.zona, nom = n.nombre;
   const buenas = resenasOk(n) === true;
   const elogio = buenas
-    ? elige(n, [`Estuve mirando ${nom} en Google: un ${num1(n.valoracion)} con ${n.resenas} reseñas, se nota que lo hacéis bien 👏`,
+    ? elige(n, [`Estuve mirando ${nom} en Google: un ${num1(n.valoracion)} con ${n.resenas} reseñas, se nota que lo hacéis bien.`,
                 `Vi que ${nom} tiene un ${num1(n.valoracion)} en Google con ${n.resenas} opiniones. Eso no lo consigue cualquiera.`])
     : elige(n, [`Os encontré buscando ${t} en ${z} y me gustó lo que vi de ${nom}.`, `Estuve mirando negocios de ${z} y me fijé en ${nom}.`]);
   const necesidad = {
     comida: `Una cosa que veo mucho: alguien busca "${t} en ${z}" un viernes por la noche, entra en los que tienen web con la carta y los precios, y pide ahí. Los que no tienen web casi ni aparecen.`,
-    restaurante: `La gente hoy mira el móvil antes de decidir dónde comer: carta, fotos, precio. Y si no lo encuentra, se va al de al lado aunque se coma peor 😅`,
+    restaurante: `La gente hoy mira el móvil antes de decidir dónde comer: carta, fotos, precio. Y si no lo encuentra, se va al de al lado aunque se coma peor.`,
     panaderia: `Cada vez más gente busca en el móvil "tartas por encargo" o "${t} cerca de mí", y los encargos se los llevan los que tienen web con fotos y WhatsApp.`,
     foto: `Antes de contratar a un fotógrafo, la gente quiere ver trabajos y precios en un sitio ordenado. En Instagram se pierde todo entre publicaciones, y en Google sin web casi no se sale.`,
     pelo: `Los que llegan nuevos al barrio buscan "${t} cerca de mí" y eligen por fotos y precios. Además, con una web te piden cita por WhatsApp y no tienes que coger el teléfono mientras cortas.`,
@@ -476,14 +476,15 @@ function mensajeWA(n, yo) {
   const hola = elige(n, ["¡Hola! ¿Qué tal?", "Buenas, ¿qué tal va todo?", "¡Hola, buenas!"]) + (yo ? ` Soy ${yo}.` : "");
   return `${hola}\n\n${elogio}\n\n${necesidad}\n\n`
     + `Nosotros hacemos webs para negocios de la zona, sencillas y bonitas: ${que}. Lo hacemos todo nosotros, vosotros solo nos pasáis las fotos.\n\n`
-    + elige(n, ["¿Te mando un ejemplo de cómo quedaría la vuestra? Si no te convence, ningún problema 🙂", "Si quieres te preparo un ejemplo de cómo quedaría la vuestra y lo ves sin compromiso. ¿Te parece?"])
-    + `\n\n${yo ? yo + ", " : ""}AYM Web Agency`;
+    + elige(n, ["¿Te mando un ejemplo de cómo quedaría la vuestra? Si no te convence, ningún problema.", "Si quieres te preparo un ejemplo de cómo quedaría la vuestra y lo ves sin compromiso. ¿Te parece?"])
+    + `\n\nTen un muy buen día, un saludo.`;
 }
 // Mensaje directo para Instagram / TikTok (más corto)
 function mensajeDM(n, yo) {
   const { elogio, necesidad, que } = piezas(n);
-  return `${elige(n, ["¡Hola! 👋", "¡Buenas! 🙂"])}${yo ? ` Soy ${yo}, de AYM Web Agency.` : " Te escribo de AYM Web Agency."}\n\n${elogio}\n\n${necesidad}\n\n`
-    + `Hacemos webs para negocios del barrio con ${que}. ¿Os enseño un ejemplo de cómo quedaría la vuestra? Sin compromiso.\n\nWhatsApp 647 62 79 47`;
+  return `${elige(n, ["¡Hola!", "¡Buenas!"])}${yo ? ` Soy ${yo}.` : ""}\n\n${elogio}\n\n${necesidad}\n\n`
+    + `Nosotros hacemos webs para negocios de la zona con ${que}. ¿Te enseño un ejemplo de cómo quedaría la vuestra? Sin compromiso.\n\n`
+    + `Si te viene mejor, mi WhatsApp es 647 62 79 47.\n\nTen un muy buen día, un saludo.`;
 }
 const CANALES = {
   wa: { nombre: "WhatsApp", estado: "whatsapp_enviado", boton: "Abrir WhatsApp" },
