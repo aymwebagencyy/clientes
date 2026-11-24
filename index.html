@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<link rel="stylesheet" href="app.css?v=4">
+<link rel="stylesheet" href="app.css?v=6">
 </head>
 <body>
 
@@ -59,6 +59,12 @@
     </div>
   </div>
 
+  <section class="hoy">
+    <div class="hoyhead"><h2>Hoy toca</h2><span class="meta" id="hoyInfo"></span></div>
+    <div class="meta">10 negocios al día. Pulsa un botón: se abre el mensaje personalizado y tú solo lo envías. Se marca solo, para que tu socio no le escriba otra vez.</div>
+    <div id="hoyList"></div>
+  </section>
+
   <div class="filters">
     <button class="chip on" data-s="">Todos</button>
     <button class="chip" data-s="Comida">🍽 Comida</button>
@@ -81,7 +87,7 @@
 <div id="toast" hidden></div>
 <input type="file" id="upl" accept="image/*" multiple hidden>
 
-<script src="busqueda.js?v=4"></script>
-<script src="app.js?v=4"></script>
+<script src="busqueda.js?v=6"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>

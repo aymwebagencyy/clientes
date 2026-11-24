@@ -8,7 +8,7 @@ const WEB_AYM = "https://aymwebagencyy.github.io";
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, detectSessionInUrl: true } });
 
 const ESTADOS = {
-  sin_llamar:["Sin llamar","#9C978C"], whatsapp_enviado:["WhatsApp enviado","#6FA3D8"], no_contesta:["No contesta","#E0A84F"],
+  sin_llamar:["Sin llamar","#9C978C"], whatsapp_enviado:["WhatsApp enviado","#6FA3D8"], ig_enviado:["Instagram enviado","#6FA3D8"], tk_enviado:["TikTok enviado","#6FA3D8"], no_contesta:["No contesta","#E0A84F"],
   llamar_luego:["Volver a llamar","#E0A84F"], llamado:["Llamado","#6FA3D8"], enviado_socio:["Pasado al socio","#6FA3D8"],
   interesado:["Interesado","#5BB98B"], quiere_web:["Quiere la web","#5BB98B"], reunion:["Reunión / visita","#5BB98B"],
   presupuesto:["Presupuesto enviado","#C9A961"], en_proceso:["Haciendo su web","#C9A961"], cliente:["¡Cliente! Web entregada","#E8D4A0"],
@@ -93,7 +93,7 @@ async function guardar(tabla, id, data) {
 
 const est = id => (S.seg.get(id) || {}).estado || "sin_llamar";
 const zonasLista = () => [...S.zon.entries()].filter(([id]) => !id.startsWith("_")).map(([, z]) => z).sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
-function renderTodo() { renderStats(); renderZonas(); dibujarNegocios(); renderGrid(); }
+function renderTodo() { renderStats(); renderHoy(); renderZonas(); dibujarNegocios(); renderGrid(); }
 
 // =================== BÚSQUEDA DE NEGOCIOS ===================
 async function buscarZona(nombre, cantidad = POR_SEMANA) {
@@ -279,6 +279,7 @@ function card(n) {
       ${n.email ? `<div class="row"><span class="k">Email</span><span class="v">${esc(n.email)}</span></div>` : ""}
       ${n.horario ? `<div class="row"><span class="k">Horario</span><span class="v meta">${esc(n.horario)}</span></div>` : ""}
       ${n.descripcion ? `<div class="row"><span class="k">Descripción</span><span class="v meta">${esc(n.descripcion)}</span></div>` : ""}
+      <div class="row"><span class="k">Google</span><span class="v">${resenasOk(n) === null ? '<span class="meta">reseñas sin mirar</span>' : `⭐ ${num1(n.valoracion)} · ${esc(n.resenas)} reseñas${resenasOk(n) ? "" : ' <span style="color:#D46A6A">(no llega al mínimo)</span>'}`}</span></div>
       <div class="row"><span class="k">Redes</span><span class="v tags">${redes.join("") || '<span>sin redes conocidas</span>'}</span></div>
       ${extras.length ? `<div class="tags">${extras.map(x => `<span>${esc(x)}</span>`).join("")}</div>` : ""}
       <div class="tags">${googleLinks(n)}</div>
@@ -292,6 +293,8 @@ function card(n) {
       <div class="acts full">
         <button class="btn sm solid aSave">Guardar</button>
         ${movil(n) ? `<button class="btn sm solid aWa">💬 Mensaje WhatsApp</button>` : ""}
+        ${n.instagram ? `<button class="btn sm solid aIg">📸 Mensaje Instagram</button>` : ""}
+        ${n.tiktok ? `<button class="btn sm solid aTk">🎵 Mensaje TikTok</button>` : ""}
         <button class="btn sm aEdit">Completar datos</button>
         ${fotos.length ? `<button class="btn sm aUp">Subir fotos</button>` : ""}
         <button class="btn sm aCopy">Copiar ficha</button>
@@ -320,7 +323,7 @@ function bind() {
   document.querySelectorAll(".card").forEach(c => {
     const id = c.dataset.id, n = S.neg.get(id); const on = (sel, fn) => { const el = c.querySelector(sel); if (el) el.onclick = fn; };
     on(".aCopy", () => copiar(ficha(n)));
-    on(".aWa", () => modalWA(n));
+    on(".aWa", () => modalWA(n)); on(".aIg", () => modalMsg(n, "ig")); on(".aTk", () => modalMsg(n, "tk"));
     on(".aSave", async () => {
       if (!firma()) { pedirNombre(() => c.querySelector(".aSave").click()); return; }
       try { await guardarSeg(id, { estado: c.querySelector(".cEst").value, notas: c.querySelector(".cNotas").value, proxima: c.querySelector(".cProx").value }, c.querySelector(".cNota").value.trim());
@@ -354,7 +357,7 @@ function pedirNombre(despues) {
   m.querySelector("form").onsubmit = ev => { ev.preventDefault(); lsSet("aym_firma", capital(m.querySelector("#qn").value.trim())); m.remove(); $("#quien").textContent = firma(); despues && despues(); };
 }
 function editar(n) {
-  const campos = [["telefono", "Teléfono"], ["whatsapp", "WhatsApp"], ["email", "Email"], ["instagram", "Instagram (enlace o @usuario)"], ["tiktok", "TikTok (enlace o @usuario)"], ["facebook", "Facebook"], ["horario", "Horario"], ["direccion", "Dirección"]];
+  const campos = [["telefono", "Teléfono"], ["whatsapp", "WhatsApp"], ["email", "Email"], ["instagram", "Instagram (enlace o @usuario)"], ["tiktok", "TikTok (enlace o @usuario)"], ["facebook", "Facebook"], ["horario", "Horario"], ["direccion", "Dirección"], ["valoracion", "Estrellas en Google (ej. 4,6)"], ["resenas", "Nº de reseñas en Google"]];
   const m = document.createElement("div"); m.className = "modal";
   m.innerHTML = `<form class="box"><b style="font:400 18px Georgia;color:#E8D4A0">${esc(n.nombre)}</b>${campos.map(([k, l]) => `<label>${l}<input id="ed-${k}" name="${k}" value="${esc(n[k] || "")}"></label>`).join("")}
     <div class="acts" style="justify-content:flex-end;margin-top:8px"><button type="button" class="btn" id="edC">Cancelar</button><button class="btn solid">Guardar</button></div></form>`;
@@ -364,44 +367,151 @@ function editar(n) {
     campos.forEach(([k]) => { let v = String(f.get(k) || "").trim();
       if (v && k === "instagram" && !v.startsWith("http")) v = "https://instagram.com/" + v.replace(/^@/, "");
       if (v && k === "tiktok" && !v.startsWith("http")) v = "https://www.tiktok.com/@" + v.replace(/^@/, "");
-      if (v) d[k] = v; else delete d[k]; });
+      if (v && (k === "valoracion" || k === "resenas")) v = Number(v.replace(",", "."));
+      if (v || v === 0) d[k] = v; else delete d[k]; });
     try { await guardar("negocios", n.id, d); m.remove(); toast("Datos guardados"); renderTodo(); } catch (e) { toast("No se pudo guardar: " + e.message); } };
 }
 
 // Mensaje de WhatsApp personalizado según el tipo de negocio
-function mensajeWA(n, yo) {
-  const c = (n.categoria || "").toLowerCase(), z = n.zona, nom = n.nombre;
-  const hola = `Hola, ¿qué tal? ${yo ? `Soy ${yo}, de` : "Os escribo de"} AYM Web Agency, hacemos páginas web para negocios de la zona sur de Madrid.`;
-  const cierre = `Te dejo lo que hacemos: ${WEB_AYM}\n¿Te parece si te enseño un ejemplo de cómo quedaría la vuestra? Sin ningún compromiso. ¡Gracias!`;
-  let cuerpo;
-  if (/kebab|pizz|hamburg|comida rápida|bocater|poller|asador/.test(c)) cuerpo = `He visto ${nom} en ${z} y me he dado cuenta de que todavía no tenéis página web. Mucha gente busca en Google "${c.split(" /")[0]} cerca de mí" antes de pedir. Con una web sencilla saldríais ahí, con vuestra carta, precios, horario y un botón para pedir para llevar o a domicilio por WhatsApp.`;
-  else if (/restaurante|tapas|sushi|marisquer/.test(c)) cuerpo = `He visto ${nom} en ${z} y me ha llamado la atención que todavía no tenéis página web. Hoy casi todo el mundo mira en Google dónde comer antes de salir de casa. Con una web vuestra carta, fotos de los platos, horario y un botón para reservar por WhatsApp os encontrarían mucho más fácil.`;
-  else if (/panader|pasteler/.test(c)) cuerpo = `He visto ${nom} en ${z} y aún no tenéis página web. Con una web los vecinos verían vuestros productos, el horario y podrían haceros encargos (tartas, pan, bandejas para eventos) directamente por WhatsApp.`;
-  else if (/fotograf/.test(c)) cuerpo = `He visto ${nom} en ${z} y aún no tenéis página web. Antes de contratar una sesión, lo primero que mira un cliente es el portfolio. Con una web elegante se verían vuestros trabajos, los precios de las sesiones y podrían reservar fecha por WhatsApp.`;
-  else if (/barber/.test(c)) cuerpo = `He visto ${nom} en ${z} y aún no tenéis página web. Con una web vuestros clientes verían los cortes, los precios y podrían pedir cita por WhatsApp a cualquier hora, y los que buscan "barbería cerca de mí" en Google os encontrarían.`;
-  else if (/peluquer/.test(c)) cuerpo = `He visto ${nom} en ${z} y aún no tenéis página web. Con una web vuestras clientas verían los servicios, los precios y podrían pedir cita por WhatsApp a cualquier hora, y las que buscan "peluquería cerca de mí" en Google os encontrarían.`;
-  else cuerpo = `He visto ${nom} en ${z} y aún no tenéis página web. Con una web os encontrarían en Google y los clientes os podrían escribir por WhatsApp con un solo toque.`;
-  return `${hola}\n\n${cuerpo}\n\n${cierre}`;
+// ----- Mensajes personalizados: cercanos, cortos, que no suenen a plantilla -----
+const RES_MIN = 20, EST_MIN = 4.0;   // minimo de reseñas y estrellas para "Hoy toca"
+const elige = (n, arr) => arr[[...String(n.id)].reduce((a, ch) => a + ch.charCodeAt(0), 0) % arr.length];
+const num1 = v => String(Math.round(Number(v) * 10) / 10).replace(".", ",");
+function tipoDe(n) {
+  const c = (n.categoria || "").toLowerCase();
+  if (/kebab/.test(c)) return { t: "kebab", s: "comida" };
+  if (/pizz/.test(c)) return { t: "pizzería", s: "comida" };
+  if (/poller|asador/.test(c)) return { t: "pollo asado", s: "comida" };
+  if (/hamburg|comida rápida|bocater/.test(c)) return { t: "comida para llevar", s: "comida" };
+  if (/restaurante|tapas|sushi|marisquer/.test(c)) return { t: "restaurante", s: "restaurante" };
+  if (/pasteler/.test(c)) return { t: "pastelería", s: "panaderia" };
+  if (/panader/.test(c)) return { t: "panadería", s: "panaderia" };
+  if (/fotograf/.test(c)) return { t: "fotógrafo", s: "foto" };
+  if (/barber/.test(c)) return { t: "barbería", s: "pelo" };
+  if (/peluquer/.test(c)) return { t: "peluquería", s: "pelo" };
+  return { t: "negocio", s: "otro" };
 }
-function modalWA(n) {
-  const num = movil(n); if (!num) return toast("Este negocio no tiene móvil");
+function piezas(n) {
+  const { t, s } = tipoDe(n), z = n.zona, nom = n.nombre;
+  const buenas = Number(n.valoracion) >= EST_MIN && Number(n.resenas) >= RES_MIN;
+  const elogio = buenas
+    ? elige(n, [`Estuve mirando ${nom} en Google: un ${num1(n.valoracion)} con ${n.resenas} reseñas, se nota que lo hacéis bien 👏`,
+                `Vi que ${nom} tiene un ${num1(n.valoracion)} en Google con ${n.resenas} opiniones. Eso no lo consigue cualquiera.`])
+    : elige(n, [`Os encontré buscando ${t} en ${z} y me gustó lo que vi de ${nom}.`, `Estuve mirando negocios de ${z} y me fijé en ${nom}.`]);
+  const necesidad = {
+    comida: `Una cosa que veo mucho: alguien busca "${t} en ${z}" un viernes por la noche, entra en los que tienen web con la carta y los precios, y pide ahí. Los que no tienen web casi ni aparecen.`,
+    restaurante: `La gente hoy mira el móvil antes de decidir dónde comer: carta, fotos, precio. Y si no lo encuentra, se va al de al lado aunque se coma peor 😅`,
+    panaderia: `Cada vez más gente busca en el móvil "tartas por encargo" o "${t} cerca de mí", y los encargos se los llevan los que tienen web con fotos y WhatsApp.`,
+    foto: `Antes de contratar a un fotógrafo, la gente quiere ver trabajos y precios en un sitio ordenado. En Instagram se pierde todo entre publicaciones, y en Google sin web casi no se sale.`,
+    pelo: `Los que llegan nuevos al barrio buscan "${t} cerca de mí" y eligen por fotos y precios. Además, con una web te piden cita por WhatsApp y no tienes que coger el teléfono mientras cortas.`,
+    otro: `Hoy casi todo el mundo busca en el móvil antes de ir a un sitio, y los que no tienen web se quedan fuera.`,
+  }[s];
+  const que = {
+    comida: "la carta con precios, fotos, horario y un botón para pedir por WhatsApp", restaurante: "la carta, fotos de los platos, horario y reservas por WhatsApp",
+    panaderia: "vuestros productos, encargos por WhatsApp y el horario", foto: "vuestro portfolio, los packs con precios y reservas de fecha",
+    pelo: "vuestros trabajos, precios y cita por WhatsApp", otro: "vuestros servicios, fotos, horario y un botón de WhatsApp",
+  }[s];
+  return { elogio, necesidad, que };
+}
+function mensajeWA(n, yo) {
+  const { elogio, necesidad, que } = piezas(n);
+  const hola = elige(n, ["¡Hola! ¿Qué tal?", "Buenas, ¿qué tal va todo?", "¡Hola, buenas!"]) + (yo ? ` Soy ${yo}.` : "");
+  return `${hola}\n\n${elogio}\n\n${necesidad}\n\n`
+    + `Nosotros hacemos webs para negocios de la zona, sencillas y bonitas: ${que}. Lo hacemos todo nosotros, vosotros solo nos pasáis las fotos.\n\n`
+    + elige(n, ["¿Te mando un ejemplo de cómo quedaría la vuestra? Si no te convence, ningún problema 🙂", "Si quieres te preparo un ejemplo de cómo quedaría la vuestra y lo ves sin compromiso. ¿Te parece?"])
+    + `\n\n${yo ? yo + ", " : ""}AYM Web Agency`;
+}
+// Mensaje directo para Instagram / TikTok (más corto)
+function mensajeDM(n, yo) {
+  const { elogio, necesidad, que } = piezas(n);
+  return `${elige(n, ["¡Hola! 👋", "¡Buenas! 🙂"])}${yo ? ` Soy ${yo}, de AYM Web Agency.` : " Te escribo de AYM Web Agency."}\n\n${elogio}\n\n${necesidad}\n\n`
+    + `Hacemos webs para negocios del barrio con ${que}. ¿Os enseño un ejemplo de cómo quedaría la vuestra? Sin compromiso.\n\nWhatsApp 647 62 79 47`;
+}
+const CANALES = {
+  wa: { nombre: "WhatsApp", estado: "whatsapp_enviado", boton: "Abrir WhatsApp" },
+  ig: { nombre: "Instagram", estado: "ig_enviado", boton: "Copiar y abrir Instagram" },
+  tk: { nombre: "TikTok", estado: "tk_enviado", boton: "Copiar y abrir TikTok" },
+};
+function modalWA(n) { modalMsg(n, "wa"); }
+function modalMsg(n, canal) {
+  const C = CANALES[canal], num = movil(n);
+  const destino = canal === "wa" ? num : canal === "ig" ? n.instagram : n.tiktok;
+  if (!destino) return toast(`Este negocio no tiene ${C.nombre}`);
+  const gen = yo => canal === "wa" ? mensajeWA(n, yo) : mensajeDM(n, yo);
   const m = document.createElement("div"); m.className = "modal";
-  m.innerHTML = `<div class="box"><b style="font:400 18px Georgia;color:#E8D4A0">WhatsApp a ${esc(n.nombre)}</b>
-    <div class="meta">Para +${esc(num)} · ${esc(n.categoria)} · ${esc(n.zona)}. Puedes cambiar el texto antes de enviarlo.</div>
+  m.innerHTML = `<div class="box"><b style="font:400 18px Georgia;color:#E8D4A0">${C.nombre} a ${esc(n.nombre)}</b>
+    <div class="meta">${canal === "wa" ? `Para +${esc(num)}` : esc(destino)} · ${esc(n.categoria)} · ${esc(n.zona)}. Puedes cambiar el texto antes de enviarlo.</div>
+    ${canal === "wa" ? "" : `<div class="note" style="margin:0">Al pulsar el botón se copia el mensaje y se abre su perfil: pulsa <b>Mensaje</b>, mantén pulsado para <b>Pegar</b> y envía.</div>`}
     <label for="waYo">Firmar como (tu nombre)</label><input id="waYo" placeholder="Tu nombre">
-    <label for="waTxt">Mensaje</label><textarea id="waTxt" rows="12"></textarea>
+    <label for="waTxt">Mensaje</label><textarea id="waTxt" rows="11"></textarea>
     <div class="acts" style="justify-content:flex-end;margin-top:6px"><button type="button" class="btn" id="waC">Cerrar</button><button type="button" class="btn" id="waCopy">Copiar texto</button>
-      <a class="btn solid" id="waGo" target="_blank" rel="noopener">Abrir WhatsApp</a></div></div>`;
+      <a class="btn solid" id="waGo" target="_blank" rel="noopener">${C.boton}</a></div></div>`;
   document.body.append(m);
   const ta = m.querySelector("#waTxt"), go = m.querySelector("#waGo"), yo = m.querySelector("#waYo");
-  yo.value = firma(); ta.value = mensajeWA(n, yo.value);
-  const upd = () => { go.href = `https://wa.me/${num}?text=${encodeURIComponent(ta.value)}`; }; upd(); ta.oninput = upd;
-  yo.oninput = () => { lsSet("aym_firma", capital(yo.value.trim())); ta.value = mensajeWA(n, yo.value.trim()); upd(); };
+  yo.value = firma(); ta.value = gen(yo.value);
+  const upd = () => { go.href = canal === "wa" ? `https://wa.me/${num}?text=${encodeURIComponent(ta.value)}` : destino; }; upd(); ta.oninput = upd;
+  yo.oninput = () => { lsSet("aym_firma", capital(yo.value.trim())); ta.value = gen(yo.value.trim()); upd(); };
   m.querySelector("#waC").onclick = () => m.remove();
   m.querySelector("#waCopy").onclick = () => copiar(ta.value);
-  go.addEventListener("click", async () => { m.remove();
-    const prev = S.seg.get(n.id) || {}; const estado = (!prev.estado || prev.estado === "sin_llamar") ? "whatsapp_enviado" : prev.estado;
-    try { await guardarSeg(n.id, { estado }, "Mensaje de WhatsApp enviado"); renderTodo(); toast("Marcado como WhatsApp enviado"); } catch (e) { toast("No se pudo marcar: " + e.message); } });
+  go.addEventListener("click", async () => {
+    if (canal !== "wa") { try { await navigator.clipboard.writeText(ta.value); } catch {} }
+    m.remove();
+    const prev = S.seg.get(n.id) || {}; const estado = (!prev.estado || ["sin_llamar", "whatsapp_enviado", "ig_enviado", "tk_enviado"].includes(prev.estado)) ? C.estado : prev.estado;
+    try { await guardarSeg(n.id, { estado }, `Mensaje de ${C.nombre} enviado`); renderTodo(); toast(canal === "wa" ? "Marcado como WhatsApp enviado" : "Mensaje copiado: pégalo en su chat. Marcado como enviado"); }
+    catch (e) { toast("No se pudo marcar: " + e.message); } });
+}
+
+// =================== HOY TOCA ===================
+const POR_DIA = 10;
+const hoyISO = () => ahora().slice(0, 10);
+const saltados = () => { try { const o = JSON.parse(lsGet("aym_saltar") || "{}"); return o.dia === hoyISO() ? o.ids : []; } catch { return []; } };
+function contactadoHoy(id) { return ((S.seg.get(id) || {}).historial || []).some(h => (h.fecha || "").startsWith(hoyISO()) && /enviado|llam/i.test(h.nota + " " + h.estado)); }
+// true = cumple, false = no llega al mínimo, null = aún no lo sabemos
+function resenasOk(n) {
+  if (n.valoracion == null || n.resenas == null || n.valoracion === "" || n.resenas === "") return null;
+  return Number(n.valoracion) >= EST_MIN && Number(n.resenas) >= RES_MIN;
+}
+function renderHoy() {
+  const box = $("#hoyList"); if (!box) return;
+  const todos = [...S.neg.values()].filter(n => !n.descartado);
+  const hechos = todos.filter(n => contactadoHoy(n.id)).length;
+  const skip = saltados();
+  const canal = n => (movil(n) ? 4 : 0) + (n.instagram ? 2 : 0) + (n.tiktok ? 2 : 0) + (n.telefono ? 1 : 0);
+  const quedan = Math.max(0, POR_DIA - hechos);
+  const lista = todos.filter(n => est(n.id) === "sin_llamar" && !skip.includes(n.id) && resenasOk(n) !== false && (!zona || n.zona === zona) && (!sectorF || n.sector === sectorF))
+    .sort((a, b) => (resenasOk(b) ? 1 : 0) - (resenasOk(a) ? 1 : 0) || canal(b) - canal(a) || (b.prioridad || 0) - (a.prioridad || 0) || a.id.localeCompare(b.id)).slice(0, quedan);
+  $("#hoyInfo").innerHTML = `<b>${hechos}</b> de ${POR_DIA} contactados hoy` + (quedan ? "" : " · <b style='color:#5BB98B'>¡Objetivo de hoy cumplido!</b>");
+  box.innerHTML = lista.length ? lista.map(n => {
+    const q = encodeURIComponent(`${n.nombre} ${n.zona}`), maps = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(n.nombre + " " + (n.direccion || n.zona))}`;
+    const cab = `<div class="hn"><b>${esc(n.nombre)}</b><span class="meta">${esc(n.categoria)} · ${esc(n.zona)}${n.telefono ? " · " + esc(n.telefono) : ""}${resenasOk(n) ? ` · ⭐ ${num1(n.valoracion)} (${esc(n.resenas)} reseñas)` : ""}</span></div>`;
+    if (resenasOk(n) === null) return `<div class="hoyrow" data-id="${esc(n.id)}">${cab}
+      <div class="acts"><a class="btn sm solid" target="_blank" rel="noopener" href="${maps}">⭐ Mirar reseñas en Maps</a>
+        <input class="hEst" type="text" inputmode="decimal" placeholder="Estrellas" aria-label="Estrellas" style="width:96px">
+        <input class="hRes" type="text" inputmode="numeric" placeholder="Nº reseñas" aria-label="Número de reseñas" style="width:110px">
+        <button class="btn sm hRsave">Guardar</button><button class="btn sm hSkip">Saltar</button></div></div>`;
+    return `<div class="hoyrow" data-id="${esc(n.id)}">${cab}
+      <div class="acts">
+        ${movil(n) ? `<button class="btn sm solid hWa">💬 WhatsApp</button>` : ""}
+        ${n.instagram ? `<button class="btn sm solid hIg">📸 Instagram</button>` : `<a class="btn sm" target="_blank" rel="noopener" href="https://www.google.com/search?q=${q}%20instagram">🔎 Buscar Instagram</a>`}
+        ${n.tiktok ? `<button class="btn sm solid hTk">🎵 TikTok</button>` : `<a class="btn sm" target="_blank" rel="noopener" href="https://www.google.com/search?q=${q}%20tiktok">🔎 Buscar TikTok</a>`}
+        ${!movil(n) && n.telefono ? `<a class="btn sm solid hTel" href="tel:${esc(n.telefono)}">☎ Llamar</a>` : ""}
+        <button class="btn sm hAdd">＋ Añadir redes</button>
+        <button class="btn sm hSkip">Saltar</button>
+      </div></div>`; }).join("")
+    : `<div class="meta">${quedan ? "No quedan negocios con buenas reseñas sin contactar. Añade otra zona en el mapa." : "Mañana tendrás 10 más."}</div>`;
+  box.querySelectorAll(".hoyrow").forEach(r => {
+    const n = S.neg.get(r.dataset.id), on = (s, f) => { const e = r.querySelector(s); if (e) e.onclick = f; };
+    on(".hWa", () => modalMsg(n, "wa")); on(".hIg", () => modalMsg(n, "ig")); on(".hTk", () => modalMsg(n, "tk"));
+    on(".hAdd", () => editar(n));
+    on(".hTel", () => setTimeout(() => guardarSeg(n.id, { estado: "llamado" }, "Llamado desde Hoy toca").then(renderTodo).catch(() => {}), 500));
+    on(".hRsave", async () => {
+      const e = parseFloat(String(r.querySelector(".hEst").value).replace(",", ".")), c = parseInt(r.querySelector(".hRes").value, 10);
+      if (!(e >= 0 && e <= 5) || !(c >= 0)) return toast("Pon las estrellas (0 a 5) y el número de reseñas");
+      try { await guardar("negocios", n.id, { ...n, valoracion: e, resenas: c });
+        toast(e >= EST_MIN && c >= RES_MIN ? "¡Cumple! Ya puedes escribirle" : `Quitado: necesita ${num1(EST_MIN)}★ y ${RES_MIN} reseñas`); renderTodo(); }
+      catch (err) { toast("No se pudo guardar: " + err.message); } });
+    on(".hSkip", () => { lsSet("aym_saltar", JSON.stringify({ dia: hoyISO(), ids: [...saltados(), n.id] })); renderHoy(); });
+  });
 }
 
 arranque();
